@@ -395,3 +395,4 @@ class InceptionE(ivy.Module):
         outputs = [branch1x1, branch3x3, branch3x3dbl, branch_pool]
         outputs = ivy.concat(outputs, axis=3)
         return outputs
+
