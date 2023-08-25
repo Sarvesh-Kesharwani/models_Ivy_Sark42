@@ -39,7 +39,6 @@ class InceptionBasicConv2d(ivy.Module):
             with_bias=False,
         )
         self.bn = ivy.BatchNorm2D(self.out_channels, eps=0.001)
-        pf(f"BasicConv2d | build | done 2/2")
 
     def _forward(self, x):
         """Forward pass method for the module."""
