@@ -1,135 +1,245 @@
-from typing import Callable, Optional, Union, Tuple
 import ivy
+import sys
+
+sys.path.append("/ivy_models/log_sys")
+from pf import pf
 
 
-def _make_divisible(v: float, divisor: int, min_value: Optional[int] = None) -> int:
+
+class ConvBlock(ivy.Module):
     """
-    Taken from the original tf repo.
-    It ensures that all layers have a channel number that is divisible by 8
-    It can be seen here:
-    https://github.com/tensorflow/models/blob/master/research/slim/nets/mobilenet/mobilenet.py
+    Conv block used in the GoogLeNet architecture.
+
+    Args::
+        in_channels (int): Number of input channels.
+        out_channels (int): Number of output channels.
+        kernel_size ([list | tuple]): kernel_shape for the block.
+        stride (Optional[ivy.Module]): Stride value for the block.
+
     """
-    if min_value is None:
-        min_value = divisor
-    new_v = max(min_value, int(v + divisor / 2) // divisor * divisor)
-    # Make sure that round down does not go down by more than 10%.
-    if new_v < 0.9 * v:
-        new_v += divisor
-    return int(new_v)
 
-
-class EfficientNetConv2dNormActivation(ivy.Sequential):
-    def __init__(
-        self,
-        in_channels: int,
-        out_channels: int,
-        kernel_size: Union[int, Tuple[int, ...]] = 3,
-        stride: Union[int, Tuple[int, ...]] = 1,
-        padding: Optional[Union[int, Tuple[int, ...], str]] = None,
-        groups: int = 1,
-        norm_layer: Optional[Callable[..., ivy.Module]] = ivy.BatchNorm2D,
-        activation_layer: Optional[Callable[..., ivy.Module]] = ivy.ReLU,
-        dilation: Union[int, Tuple[int, ...]] = 1,
-        inplace: Optional[bool] = True,
-        bias: Optional[bool] = None,
-        conv_layer: Callable[..., ivy.Module] = ivy.Conv2D,
-        depthwise: bool = False,
-    ) -> None:
-        if padding is None:
-            padding = (kernel_size - 1) // 2 * dilation
-        if bias is None:
-            bias = norm_layer is None
-        if not depthwise:
-            layers = [
-                conv_layer(
-                    in_channels,
-                    out_channels,
-                    [kernel_size, kernel_size],
-                    stride,
-                    padding,
-                    dilations=dilation,
-                    with_bias=bias,
-                )
-            ]
-        else:
-            layers = [
-                ivy.DepthwiseConv2D(
-                    in_channels,
-                    [kernel_size, kernel_size],
-                    stride,
-                    padding,
-                    dilations=dilation,
-                    with_bias=bias,
-                )
-            ]
-
-        if norm_layer is not None:
-            layers.append(norm_layer(out_channels))
-
-        if activation_layer is not None:
-            layers.append(activation_layer())
-        super().__init__(*layers)
+    def __init__(self, in_channels, out_channels, kernel_size, stride, padding, data_format="NCHW"):
+        self.in_channels = in_channels
         self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
+        self.data_format = data_format
+        super(ConvBlock, self).__init__()
+
+    def _build(self, *args, **kwargs):
+        self.conv = ivy.Conv2D(
+            self.in_channels,
+            self.out_channels,
+            self.kernel_size,
+            self.stride,
+            self.padding,
+            with_bias=False,
+            data_format="NCHW",
+        )
+        self.bn = ivy.BatchNorm2D(self.out_channels, eps=0.001, data_format=self.data_format)
+        self.relu = ivy.ReLU()
+
+    def _forward(self, x):
+        x = self.conv(x)
+        x = self.bn(x)
+        x = self.relu(x)
+        return x
 
 
-class EfficientNetSqueezeExcitation(ivy.Module):
+def test_ConvBlock():
+    ivy.set_backend('torch')
+    # conv1
+    # N x 224 x 224 x 3
+    random_test_tensor = ivy.random_normal(shape=(1, 224, 224, 3))
+    pf(f"test_ConvBlock | random_test_tensor shape is: {random_test_tensor.shape}")
+
+    block = ConvBlock(3, 64, [7,7], (2,2), 3)
+    block(random_test_tensor)
+    # N x 112 x 112 x 64
+    pf("test_ConvBlock | Test Successfull!")
+    pf("||")
+
+test_ConvBlock()
+
+
+class Inception(ivy.Module):
+    """
+    Inception block used in the GoogLeNet architecture.
+
+    Args::
+        in_channels (int): Number of input channels.
+        num1x1 (int): Number of num1x1 channels.
+        num3x3_reduce (int): Number of num3x3_reduce channels.
+        num3x3 (int): Number of num3x3 channels.
+        num5x5_reduce (int): Number of num5x5_reduce channels.
+        num5x5 (int): Number of num5x5 channels.
+        pool_proj (int): Number of pool_proj channels.
+    """
+
     def __init__(
         self,
-        input_channels: int,
-        squeeze_channels: int,
-        activation: Callable[..., ivy.Module] = ivy.ReLU,
-        scale_activation: Callable[..., ivy.Module] = ivy.sigmoid,
-    ) -> None:
-        self.fc1 = ivy.Conv2D(input_channels, squeeze_channels, [1, 1], 1, 0)
-        self.fc2 = ivy.Conv2D(squeeze_channels, input_channels, [1, 1], 1, 0)
-        self.activation = activation()
-        self.scale_activation = scale_activation
+        in_channels,
+        num1x1,
+        num3x3_reduce,
+        num3x3,
+        num5x5_reduce,
+        num5x5,
+        pool_proj,
+        data_format="NCHW",
+    ):
+        self.in_channels = in_channels
+        self.num1x1 = num1x1
+        self.num3x3_reduce = num3x3_reduce
+        self.num3x3 = num3x3
+        self.num5x5_reduce = num5x5_reduce
+        self.num5x5 = num5x5
+        self.pool_proj = pool_proj,
+        self.data_format = data_format,
+        super(Inception, self).__init__()
 
-        super().__init__()
+    def _build(self, *args, **kwargs):
+        self.conv_1x1 = ivy.Sequential(
+            ConvBlock(
+                self.in_channels,
+                self.num1x1,
+                kernel_size=[1, 1],
+                stride=1,
+                padding="SAME",
+                data_format = self.data_format,
+            )
+        )
 
-    def _scale(self, x: ivy.Array) -> ivy.Array:
-        x = ivy.permute_dims(x, (0, 3, 1, 2))
-        x = ivy.adaptive_avg_pool2d(x, 1)
-        scale = ivy.permute_dims(x, (0, 2, 3, 1))
-        scale = self.fc1(scale)
-        scale = self.activation(scale)
-        scale = self.fc2(scale)
-        return self.scale_activation(scale)
+        self.conv_3x3 = ivy.Sequential(
+            ConvBlock(
+                self.in_channels,
+                self.num3x3_reduce,
+                kernel_size=[1, 1],
+                stride=1,
+                padding="SAME",
+                data_format = self.data_format,
+            ),
+            ConvBlock(
+                self.num3x3_reduce,
+                self.num3x3,
+                kernel_size=[3, 3],
+                stride=1,
+                padding="SAME",
+                data_format = self.data_format,
+            ),
+        )
 
-    def _forward(self, input: ivy.Array) -> ivy.Array:
-        scale = self._scale(input)
-        return scale * input
+        self.conv_5x5 = ivy.Sequential(
+            ConvBlock(
+                self.in_channels,
+                self.num5x5_reduce,
+                kernel_size=[1, 1],
+                stride=1,
+                padding="SAME",
+                data_format = self.data_format,
+            ),
+            ConvBlock(
+                self.num5x5_reduce,
+                self.num5x5,
+                kernel_size=[3, 3],
+                stride=1,
+                padding="SAME",
+                data_format = self.data_format,
+            ),
+        )
+
+        self.pool_proj = ivy.Sequential(
+            ivy.MaxPool2D([3, 3], 1, "SAME", data_format = self.data_format,),
+            ConvBlock(
+                self.in_channels,
+                self.pool_proj,
+                kernel_size=[1, 1],
+                stride=1,
+                padding="SAME",
+                data_format = self.data_format,
+            ),
+        )
+
+    def _forward(self, x):
+        conv_1x1 = self.conv_1x1(x)
+
+        conv_3x3 = self.conv_3x3(x)
+
+        conv_5x5 = self.conv_5x5(x)
+
+        pool_proj = self.pool_proj(x)
+
+        return ivy.concat([conv_1x1, conv_3x3, conv_5x5, pool_proj], axis=3)
 
 
-def stochastic_depth(x, p):
+def test_Inception():
+    ivy.set_backend('torch')
+    # inception3a
+    # N x 192 x 28 x 28
+    random_test_tensor = ivy.random_normal(shape=(1, 28, 28, 192))
+    pf(f"test_Inception | random_test_tensor shape is: {random_test_tensor.shape}")
+
+    block = Inception(192, 64, 96, 128, 16, 32, 32)
+    block(random_test_tensor)
+    # N x 256 x 28 x 28
+    pf("test_Inception | Test Successfull!")
+    pf("||")
+
+test_Inception()
+
+
+class Auxiliary(ivy.Module):
     """
-    Implements the Stochastic Depth from `"Deep Networks with Stochastic Depth"
-    <https://arxiv.org/abs/1603.09382>`_ used for randomly dropping residual
-    branches of residual architectures.
+    Auxiliary block used in the GoogLeNet architecture.
 
-    Args:
-        input (Tensor[N, ...]): The input tensor or arbitrary dimensions with
-                    the first one being its batch i.e. a batch with ``N`` rows.
-        p (float): probability of the input to be zeroed.
-
-    Returns
-    -------
-        Tensor[N, ...]: The randomly zeroed tensor.
+    Args::
+        in_channels (int): Number of input channels.
+        num_classes (int): Number of channels in last fc layer.
     """
-    survival_rate = 1.0 - p
-    binary_tensor = (
-        ivy.random_uniform(shape=(x.shape[0], 1, 1, 1), low=0, high=1, device=x.device)
-        < survival_rate
-    )
-    return ivy.divide(x, survival_rate) * binary_tensor
 
+    def __init__(self, in_channels, num_classes, aux_dropout=0.7, data_format="NCHW"):
+        self.in_channels = in_channels
+        self.num_classes = num_classes
+        self.aux_dropout = aux_dropout
+        self.data_format = data_format
+        super(Auxiliary, self).__init__()
 
-class EfficientNetStochasticDepth(ivy.Module):
-    """See :func:`stochastic_depth`."""
+    def _build(self, *args, **kwargs):
+        self.pool = ivy.AvgPool2D([4, 4], 3, "VALID", data_format=self.data_format)
+        self.conv = ConvBlock(self.in_channels, 128, [1, 1], 1, "SAME", data_format=self.data_format)
 
-    def __init__(self, p: float) -> None:
-        self.p = p
-        super().__init__()
+        self.fc1 = ivy.Linear(2048, 1024)
+        self.relu = ivy.ReLU()
 
-    def _forward(self, input: ivy.Array) -> ivy.Array:
-        return stochastic_depth(input, self.p)
+        self.dropout = ivy.Dropout(self.aux_dropout)
+
+        self.fc2 = ivy.Linear(1024, self.num_classes)
+        self.softmax = ivy.Softmax()
+
+    def _forward(self, x):
+        out = self.pool(x)
+        out = self.conv(out)
+        out = ivy.flatten(out, start_dim=1)
+
+        out = self.fc1(out)
+        out = self.relu(out)
+
+        out = self.dropout(out)
+
+        out = self.fc2(out)
+
+        return out
+
+def test_Auxiliary():
+    ivy.set_backend('torch')
+    # N x 512 x 14 x 14
+    random_test_tensor = ivy.random_normal(shape=(1, 14, 14, 512))
+    pf(f"test_Auxiliary | random_test_tensor shape is: {random_test_tensor.shape}")
+
+    block = Auxiliary(512, 1000, 0)
+    block(random_test_tensor)
+    # N x 1 x 1000
+    pf("test_Auxiliary | Test Successfull!")
+    pf("||")
+
+test_Auxiliary()
