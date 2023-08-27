@@ -1,71 +1,11 @@
 import ivy
-from ivy_models.base import BaseModel, BaseSpec
+from ivy_models.base import BaseModel
 from ivy_models.helpers import load_transformers_weights
-from .layers import AlbertAttention, AlbertFeedForward, AlbertEmbedding
+from .layers import AlbertAttention, AlbertFeedForward, AlbertEmbedding, AlbertConfig
 
 
-# AlbertConfig
-class AlbertConfig(BaseSpec):
-    vocab_size: int
-    hidden_size: int
-    num_attention_heads: int
-    max_position_embeddings: int
-    num_hidden_layers: int
-    intermediate_size: int
-    hidden_act: str
-    chunk_size_feed_forward: int = 0
-    position_embedding_type = "absolute"
-    pad_token_id = 0
-    use_cache = True
-    type_vocab_size = 2
-    attn_drop_rate: float = 0.0
-    ffd_drop: float = 0.0
-    hidden_dropout: float = 0.0
-    embd_drop_rate: float = 0.0
-    layer_norm_eps = 1e-12
-    is_decoder: bool = False
-    is_cross_attention: bool = False
 
-    def get(self, *attr_names):
-        new_dict = {}
-        for name in attr_names:
-            new_dict[name] = getattr(self, name)
-        return new_dict
-
-    def get_ffd_attrs(self):
-        return self.get(
-            "hidden_size",
-            "intermediate_size",
-            "hidden_act",
-            "ffd_drop",
-            "layer_norm_eps",
-        )
-
-    def get_attn_attrs(self):
-        return self.get(
-            "hidden_size",
-            "num_attention_heads",
-            "max_position_embeddings",
-            "position_embedding_type",
-            "attn_drop_rate",
-            "hidden_dropout",
-            "layer_norm_eps",
-            "is_decoder",
-        )
-
-    def get_embd_attrs(self):
-        return self.get(
-            "vocab_size",
-            "hidden_size",
-            "max_position_embeddings",
-            "type_vocab_size",
-            "pad_token_id",
-            "embd_drop_rate",
-            "layer_norm_eps",
-            "position_embedding_type",
-        )
-
-
+# Albert Model Construction
 def apply_chunking_to_forward(
     feed_forward_module, chunk_size: int, chunk_dim: int, *input_tensors
 ):
@@ -253,8 +193,6 @@ class AlbertModel(BaseModel):
 
 
 # Mapping and loading section
-
-
 def _albert_weights_mapping(name):
     key_map = [(f"__v{i}__", f"__{j}__") for i, j in zip(range(12), range(12))]
     key_map = key_map + [
@@ -267,19 +205,15 @@ def _albert_weights_mapping(name):
         ("ffd__LayerNorm", "output.LayerNorm"),
     ]
     name = name.replace("__w", ".weight").replace("__b", ".bias")
-    name = (
-        name.replace("biasias", "bias")
-        .replace("weighteight", "weight")
-        .replace(".weightord", ".word")
-    )
+
     for ref, new in key_map:
         name = name.replace(ref, new)
     name = name.replace("__", ".")
     return name
 
 
-def albert_base_uncased(pretrained=True):
-    # instantiate the hyperparameters same as bert
+def albert_base_v1(pretrained=True):
+    # instantiate the hyperparameters same as albert
     # set the dropout rate to 0.0 to avoid stochasticity in the output
     config = AlbertConfig(
         vocab_size=30522,
@@ -295,7 +229,7 @@ def albert_base_uncased(pretrained=True):
     model = AlbertModel(config, pooler_out=True)
     if pretrained:
         w_clean = load_transformers_weights(
-            "bert-base-uncased", model, _bert_weights_mapping
+            "albert-base-v1", model, _albert_weights_mapping
         )
         model.v = w_clean
     return model

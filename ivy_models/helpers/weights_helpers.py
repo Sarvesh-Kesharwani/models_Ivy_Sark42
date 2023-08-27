@@ -163,11 +163,23 @@ def _unflatten_set(container, name, to_set, split_on="__"):
     cont[splits[-1]] = to_set
 
 
+import sys
+sys.path.append("/ivy_models/ivy_models/log_sys/pf.py")
+from log_sys.pf import *
+
+from pprint import pprint as pp
+
+
 def load_transformers_weights(hf_repo, model, map_fn, split_on="__"):
     from transformers import AutoModel
 
     base = AutoModel.from_pretrained(hf_repo)
     ref_weights = base.state_dict()
+    
+    pf(ivy.array(model.v))
+    pf("#"*15)
+    pf(ivy.asarray(ivy.Container(ref_weights)))
+    
     ivy_torch = ivy.with_backend("torch")
     ref_weights = ivy.Container(
         ivy_torch.to_numpy(ivy_torch.Container(ref_weights)).cont_to_dict()

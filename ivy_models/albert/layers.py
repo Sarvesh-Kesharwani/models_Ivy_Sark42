@@ -1,69 +1,101 @@
 import ivy
 import math
+from ivy_models.base import BaseSpec
+
+
+# AlbertConfig
+class AlbertConfig(BaseSpec):
+    def __init__(
+        self,
+        vocab_size=30000,
+        embedding_size=128,
+        hidden_size=4096,
+        num_hidden_layers=12,
+        num_hidden_groups=1,
+        num_attention_heads=64,
+        intermediate_size=16384,
+        inner_group_num=1,
+        hidden_act="gelu_new",
+        hidden_dropout_prob=0,
+        attention_probs_dropout_prob=0,
+        max_position_embeddings=512,
+        type_vocab_size=2,
+        initializer_range=0.02,
+        layer_norm_eps=1e-12,
+        classifier_dropout_prob=0.1,
+        position_embedding_type="absolute",
+        pad_token_id=0,
+        bos_token_id=2,
+        eos_token_id=3,
+        **kwargs,
+    ):
+        super().__init__(pad_token_id=pad_token_id, bos_token_id=bos_token_id, eos_token_id=eos_token_id, **kwargs)
+
+        self.vocab_size = vocab_size
+        self.embedding_size = embedding_size
+        self.hidden_size = hidden_size
+        self.num_hidden_layers = num_hidden_layers
+        self.num_hidden_groups = num_hidden_groups
+        self.num_attention_heads = num_attention_heads
+        self.inner_group_num = inner_group_num
+        self.hidden_act = hidden_act
+        self.intermediate_size = intermediate_size
+        self.hidden_dropout_prob = hidden_dropout_prob
+        self.attention_probs_dropout_prob = attention_probs_dropout_prob
+        self.max_position_embeddings = max_position_embeddings
+        self.type_vocab_size = type_vocab_size
+        self.initializer_range = initializer_range
+        self.layer_norm_eps = layer_norm_eps
+        self.classifier_dropout_prob = classifier_dropout_prob
+        self.position_embedding_type = position_embedding_type
 
 
 class AlbertEmbedding(ivy.Module):
     def __init__(
-        self,
-        vocab_size,
-        hidden_size,
-        max_position_embeddings,
-        type_vocab_size=2,
-        pad_token_id=None,
-        embd_drop_rate=0.1,
-        layer_norm_eps=1e-5,
-        position_embedding_type="absolute",
-        v=None,
+        self, config: AlbertConfig, v=None,
     ):
-        self.vocab_size = vocab_size
-        self.hidden_size = hidden_size
-        self.type_token_size = type_vocab_size
-        self.max_position_embeddings = max_position_embeddings
-        self.padding_idx = pad_token_id
-        self.drop_rate = embd_drop_rate
-        self.position_type_embd = position_embedding_type
-        self.layer_norm_eps = layer_norm_eps
+        self.config = config
         super(AlbertEmbedding, self).__init__(v=v)
 
     def _build(self, *args, **kwargs):
-        self.word_embeddings = ivy.Embedding(
-            self.vocab_size, self.hidden_size, self.padding_idx
-        )
-        self.position_embeddings = ivy.Embedding(
-            self.max_position_embeddings, self.hidden_size
-        )
-        self.token_type_embeddings = ivy.Embedding(
-            self.type_token_size, self.hidden_size
-        )
-        self.dropout = ivy.Dropout(self.drop_rate)
+        self.word_embeddings = ivy.Embedding(self.config.vocab_size, self.config.embedding_size, padding_idx=self.config.pad_token_id)
+        self.position_embeddings = ivy.Embedding(self.config.max_position_embeddings, self.config.embedding_size)
+        self.token_type_embeddings = ivy.Embedding(self.config.type_vocab_size, self.config.embedding_size)
+        
+        # self.LayerNorm is not snake-cased to stick with TensorFlow model variable name and be able to load
+        # any TensorFlow checkpoint file
         self.LayerNorm = ivy.LayerNorm([self.hidden_size], eps=self.layer_norm_eps)
-
+        self.dropout = ivy.Dropout(self.config.hidden_dropout_prob)
+        
     def _forward(
         self,
         input_ids,
         token_type_ids=None,
         position_ids=None,
+        inputs_embeds=None,
         past_key_values_length: int = 0,
     ):
-        input_shape = input_ids.shape
+        if input_ids is not None:
+            input_shape = input_ids.shape
+        else:
+            input_shape = inputs_embeds.shape[:-1]
+        
         seq_length = input_shape[1]
 
         if position_ids is None:
-            pos_ids = ivy.expand_dims(ivy.arange(self.max_position_embeddings), axis=0)
             position_ids = pos_ids[
                 :, past_key_values_length : seq_length + past_key_values_length
             ]
 
         if token_type_ids is None:
-            token_type_ids = ivy.zeros(
-                (1, self.max_position_embeddings), dtype=ivy.int32
-            )
+            token_type_ids = ivy.zeros((1, self.max_position_embeddings), dtype=ivy.int32)
             buffered_token_type_ids = token_type_ids[:, :seq_length]
-            token_type_ids = buffered_token_type_ids.expand(
-                (input_shape[0], seq_length)
-            )
-
-        inputs_embeds = self.word_embeddings(input_ids)
+            token_type_ids = buffered_token_type_ids.expand((input_shape[0], seq_length))
+        else:
+            # TODO: ivy.int64/long needed
+            token_type_ids = ivy.zeros(input_shape, dtype=ivy.int32, device=self.position_ids.device)
+        if inputs_embeds is None:
+            inputs_embeds = self.word_embeddings(input_ids)
         token_type_embeddings = self.token_type_embeddings(token_type_ids)
 
         embeddings = inputs_embeds + token_type_embeddings
