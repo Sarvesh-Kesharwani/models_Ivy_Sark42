@@ -41,6 +41,9 @@ class ConvBlock(ivy.Module):
         self.relu = ivy.ReLU()
 
     def _forward(self, x):
+        data_format = data_format if data_format else self.spec.data_format
+        if data_format == "NCHW":
+            x = ivy.permute_dims(x, (0, 2, 3, 1))
         x = self.conv(x)
         x = self.bn(x)
         x = self.relu(x)

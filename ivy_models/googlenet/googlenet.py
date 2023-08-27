@@ -123,9 +123,15 @@ class GoogLeNet(BaseModel):
         return GoogLeNetSpec
 
     def _forward(self, x, data_format=None):
-        data_format = data_format if data_format else self.spec.data_format
-        if data_format == "NCHW":
-            x = ivy.permute_dims(x, (0, 2, 3, 1))
+        # this check is needed becoz we alaways assume that the input image format will
+        # be in NHWC format ie, ivy's tensor format, so if we are using NCHW then my model's build part will configure itself 
+        # for NCHW format BUT for image we have to permute it as well to NCHW by permuting becoz we assume it to be
+        # in NHWC bydefault.
+        
+        
+        # data_format = data_format if data_format else self.spec.data_format
+        # if data_format == "NCHW":
+        #     x = ivy.permute_dims(x, (0, 2, 3, 1))
         
         pf(f'GoogLeNet | forward | input shape is: | done -1/23')
         out = self.conv1(x)
