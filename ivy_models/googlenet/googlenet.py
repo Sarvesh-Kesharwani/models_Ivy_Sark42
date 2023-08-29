@@ -37,12 +37,25 @@ class GoogLeNetSpec(BaseSpec):
 class GoogLeNet(ivy.Module):
     def __init__(
         self,
+        training=False,
         num_classes=1000,
-        v: ivy.Container = None,
+        dropout=0.4,
+        aux_dropout=0.7,
+        data_format="NCHW",
+        spec=None,
+        v=None,
     ):
-        if v is not None:
-            self.v = v
-        self.num_classes = num_classes
+        self.spec = (
+            spec
+            if spec and isinstance(spec, GoogLeNetSpec)
+            else GoogLeNetSpec(
+                training=training,
+                num_classes=num_classes,
+                dropout=dropout,
+                aux_dropout=aux_dropout,
+                data_format=data_format,
+            )
+        )
         super(GoogLeNet, self).__init__(v=v)
 
     def _build(self, *args, **kwargs):
@@ -59,13 +72,13 @@ class GoogLeNet(ivy.Module):
 
         self.inception4A = Inception(480, 192, 96, 208, 16, 48, 64)
 
-        self.aux4A = Auxiliary(512, self.num_classes)
+        self.aux4A = Auxiliary(512, self.spec.num_classes)
 
         self.inception4B = Inception(512, 160, 112, 224, 24, 64, 64)
         self.inception4C = Inception(512, 128, 128, 256, 24, 64, 64)
         self.inception4D = Inception(512, 112, 144, 288, 32, 64, 64)
 
-        self.aux4D = Auxiliary(528, self.num_classes)
+        self.aux4D = Auxiliary(528, self.spec.num_classes)
 
         self.inception4E = Inception(528, 256, 160, 320, 32, 128, 128)
         #         self.pool5 = ivy.max_pool2d([3,3], 2, "SAME", ceil_mode=True)
@@ -75,7 +88,7 @@ class GoogLeNet(ivy.Module):
         self.pool6 = ivy.AdaptiveAvgPool2d([1, 1])
 
         self.dropout = ivy.Dropout(0.4)
-        self.fc = ivy.Linear(1024, self.num_classes, with_bias=False)
+        self.fc = ivy.Linear(1024, self.spec.num_classes, with_bias=False)
 
     def _forward(self, x, data_format=None):
         data_format = data_format if data_format else self.spec.data_format
@@ -212,14 +225,20 @@ def _inceptionNet_torch_weights_mapping(old_key, new_key):
 
 
 def inceptionNet_v1(
-    pretrained=True, training=False, num_classes=1000, dropout=0, data_format="NCHW"
+    pretrained=True,
+    training=False,
+    num_classes=1000,
+    dropout=0.4,
+    aux_dropout=0.7,
+    data_format="NCHW",
 ):
     """InceptionNet-V1 model"""
     model = GoogLeNet(
+        training=training,
         num_classes=num_classes,
-        # training=training,
-        # dropout=dropout,
-        # data_format=data_format,
+        dropout=dropout,
+        aux_dropout=aux_dropout,
+        data_format=data_format,
     )
     if pretrained:
         url = "https://download.pytorch.org/models/googlenet-1378be20.pth"

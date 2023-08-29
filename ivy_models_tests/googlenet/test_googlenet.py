@@ -7,9 +7,6 @@ import numpy as np
 from ivy_models.googlenet import inceptionNet_v1
 from ivy_models_tests import helpers
 
-import jax
-
-# jax.config.update("jax_enable_x64", False)
 
 load_weights = random.choice([False, True])
 model = inceptionNet_v1(pretrained=load_weights)
@@ -38,13 +35,13 @@ def test_GoogleNet_tiny_img_classification(device, fw, data_format):
     # Cardinality test
     assert logits.shape == tuple([ivy.to_scalar(batch_shape), num_classes])
 
-    # # Value test
-    # if load_weights:
-    #     np_out = ivy.to_numpy(logits[0])
-    #     true_indices = np.array([282, 281, 285])
-    #     calc_indices = np.argsort(np_out)[-3:][::-1]
-    #     assert np.array_equal(true_indices, calc_indices)
+    # Value test
+    if load_weights:
+        np_out = ivy.to_numpy(logits[0])
+        true_indices = np.array([282, 281, 285])
+        calc_indices = np.argsort(np_out)[-3:][::-1]
+        assert np.array_equal(true_indices, calc_indices)
 
-    #     true_logits = np.array([0.2539, 0.2391, 0.1189])
-    #     calc_logits = np.take(np_out, calc_indices)
-    #     assert np.allclose(true_logits, calc_logits, rtol=1)
+        # true_logits = np.array([0.2539, 0.2391, 0.1189])
+        # calc_logits = np.take(np_out, calc_indices)
+        # assert np.allclose(true_logits, calc_logits, rtol=1)
