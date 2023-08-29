@@ -1,8 +1,0 @@
-name: lint
-
-on: [push, pull_request]
-
-jobs:
-  check-formatting:
-    name: Check formatting
-    uses: unifyai/workflows/.github/workflows/lint.yml@main
