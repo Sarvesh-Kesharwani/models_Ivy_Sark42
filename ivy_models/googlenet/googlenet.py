@@ -3,21 +3,29 @@ import ivy
 import ivy_models
 from ivy_models.base import BaseSpec, BaseModel
 from ivy_models.googlenet.layers import (
-    ConvBlock, Inception, Auxiliary,
+    ConvBlock,
+    Inception,
+    Auxiliary,
 )
 
 import sys
+
 sys.path.append("/ivy_models/log_sys")
 from pf import pf
 
 
 class GoogLeNetSpec(BaseSpec):
     def __init__(
-        self, num_classes=1000, training=False, dropout=0.4, aux_dropout=0.7, data_format="NCHW"
+        self,
+        num_classes=1000,
+        training=False,
+        dropout=0.4,
+        aux_dropout=0.7,
+        data_format="NCHW",
     ):
         if not training:
-            dropout=0
-            aux_dropout=0
+            dropout = 0
+            aux_dropout = 0
         super(GoogLeNetSpec, self).__init__(
             num_classes=num_classes,
             dropout=dropout,
@@ -26,181 +34,173 @@ class GoogLeNetSpec(BaseSpec):
         )
 
 
-class GoogLeNet(BaseModel):
-    """
-    Inception-V1 (GoogLeNet) architecture.
-
-    Args::
-        num_classes (int): Number of output classes. Defaults to 1000.
-        v (ivy.Container): Unused parameter. Can be ignored.
-
-    """
-
+class GoogLeNet(ivy.Module):
     def __init__(
         self,
         num_classes=1000,
-        training=False,
-        dropout=0.4,
-        aux_dropout=0.7,
-        data_format="NCHW",
-        spec=None,
-        v=None,
+        v: ivy.Container = None,
     ):
-        if not training:
-            dropout=0
-            aux_dropout=0
-        self.spec = (
-            spec
-            if spec and isinstance(spec, GoogLeNetSpec)
-            else GoogLeNetSpec(
-                num_classes=num_classes,
-                dropout=dropout,
-                aux_dropout=aux_dropout,
-                data_format=data_format,
-            )
-        )
+        if v is not None:
+            self.v = v
+        self.num_classes = num_classes
         super(GoogLeNet, self).__init__(v=v)
 
     def _build(self, *args, **kwargs):
-        # N x 3 x 224 x 224
-        pf(f'GoogLeNet | build | input shape is: (1, 224, 224, 3)')
-        self.conv1 = ConvBlock(3, 64, [7, 7], (2,2), padding="SAME", data_format=self.spec.data_format)
-        pf(f'GoogLeNet | build | shape is: | done 1/21')
-        self.pool1 = ivy.MaxPool2D([3, 3], 2, "SAME", data_format=self.spec.data_format)
-        pf(f'GoogLeNet | build | shape is: (1, 224, 224, 3) | done 2/21')
-        self.conv2 = ConvBlock(64, 64, [1, 1], 1, padding="SAME", data_format=self.spec.data_format)
-        pf(f'GoogLeNet | build | shape is: (1, 224, 224, 3) | done 3/21')
-        self.conv3 = ConvBlock(64, 192, [3, 3], 1, padding="SAME", data_format=self.spec.data_format)
-        pf(f'GoogLeNet | build | shape is: (1, 224, 224, 3) | done 4/21')
-        # self.pool3 = ivy.MaxPool2D([3, 3], 2, "SAME", data_format="NCHW")
-        self.pool3 = ivy.MaxPool2D([3, 3], 2, "SAME", data_format=self.spec.data_format)
+        self.conv1 = ConvBlock(3, 64, [7, 7], 2, padding=3)
+        #         self.pool1 = ivy.max_pool2d([3,3], 2, "SAME", ceil_mode=True)
 
-        pf(f'GoogLeNet | build | shape is: (1, 224, 224, 3) | done 5/21')
-        self.inception3A = Inception(192, 64, 96, 128, 16, 32, 32, data_format=self.spec.data_format)
-        pf(f'GoogLeNet | build | shape is: (1, 224, 224, 3) | done 6/21')
-        self.inception3B = Inception(256, 128, 128, 192, 32, 96, 64, data_format=self.spec.data_format)
-        pf(f'GoogLeNet | build | shape is: (1, 224, 224, 3) | done 7/21')
-        # self.pool4 = ivy.MaxPool2D([3, 3], 2, "SAME", data_format="NCHW")
-        self.pool4 = ivy.MaxPool2D([3, 3], 2, "SAME", data_format=self.spec.data_format)
+        self.conv2 = ConvBlock(64, 64, [1, 1], 1, padding=0)
+        self.conv3 = ConvBlock(64, 192, [3, 3], 1, padding=1)
+        #         self.pool3 = ivy.max_pool2d([3,3], 2, "SAME", ceil_mode=True)
 
-        pf(f'GoogLeNet | build | shape is: (1, 224, 224, 3) | done 8/21')
-        self.inception4A = Inception(480, 192, 96, 208, 16, 48, 64, data_format=self.spec.data_format)
+        self.inception3A = Inception(192, 64, 96, 128, 16, 32, 32)
+        self.inception3B = Inception(256, 128, 128, 192, 32, 96, 64)
+        #         self.pool4 = ivy.max_pool2d([3,3], 2, "SAME", ceil_mode=True)
 
-        pf(f'GoogLeNet | build | shape is: (1, 224, 224, 3) | done 9/21')
-        self.aux4A = Auxiliary(512, self.spec.num_classes, self.spec.aux_dropout, data_format=self.spec.data_format)
+        self.inception4A = Inception(480, 192, 96, 208, 16, 48, 64)
 
-        pf(f'GoogLeNet | build | shape is: (1, 224, 224, 3) | done 10/21')
-        self.inception4B = Inception(512, 160, 112, 224, 24, 64, 64, data_format=self.spec.data_format)
-        pf(f'GoogLeNet | build | shape is: (1, 224, 224, 3) | done 11/21')
-        self.inception4C = Inception(512, 128, 128, 256, 24, 64, 64, data_format=self.spec.data_format)
-        pf(f'GoogLeNet | build | shape is: (1, 224, 224, 3) | done 12/21')
-        self.inception4D = Inception(512, 112, 144, 288, 32, 64, 64, data_format=self.spec.data_format)
+        self.aux4A = Auxiliary(512, self.num_classes)
 
-        pf(f'GoogLeNet | build | shape is: (1, 224, 224, 3) | done 13/21')
-        self.aux4D = Auxiliary(528, self.spec.num_classes, self.spec.aux_dropout, data_format=self.spec.data_format)
+        self.inception4B = Inception(512, 160, 112, 224, 24, 64, 64)
+        self.inception4C = Inception(512, 128, 128, 256, 24, 64, 64)
+        self.inception4D = Inception(512, 112, 144, 288, 32, 64, 64)
 
-        pf(f'GoogLeNet | build | shape is: (1, 224, 224, 3) | done 14/21')
-        self.inception4E = Inception(528, 256, 160, 320, 32, 128, 128, data_format=self.spec.data_format)
-        pf(f'GoogLeNet | build | shape is: (1, 224, 224, 3) | done 15/21')
-        # self.pool5 = ivy.MaxPool2D([3, 3], 2, "SAME", data_format="NCHW")
-        self.pool5 = ivy.MaxPool2D([3, 3], 2, "SAME")
+        self.aux4D = Auxiliary(528, self.num_classes)
 
-        pf(f'GoogLeNet | build | shape is: (1, 224, 224, 3) | done 16/21')
-        self.inception5A = Inception(832, 256, 160, 320, 32, 128, 128, data_format=self.spec.data_format)
-        pf(f'GoogLeNet | build | shape is: (1, 224, 224, 3) | done 17/21')
-        self.inception5B = Inception(832, 384, 192, 384, 48, 128, 128, data_format=self.spec.data_format)
-        pf(f'GoogLeNet | build | shape is: (1, 224, 224, 3) | done 18/21')
+        self.inception4E = Inception(528, 256, 160, 320, 32, 128, 128)
+        #         self.pool5 = ivy.max_pool2d([3,3], 2, "SAME", ceil_mode=True)
+
+        self.inception5A = Inception(832, 256, 160, 320, 32, 128, 128)
+        self.inception5B = Inception(832, 384, 192, 384, 48, 128, 128)
         self.pool6 = ivy.AdaptiveAvgPool2d([1, 1])
 
-        pf(f'GoogLeNet | build | shape is: (1, 224, 224, 3) | done 19/21')
-        self.spec.dropout = ivy.Dropout(self.spec.dropout)
-        pf(f'GoogLeNet | build | shape is: (1, 224, 224, 3) | done 20/21')
-        self.fc = ivy.Linear(1024, self.spec.num_classes)
-        pf(f'GoogLeNet | build | output shape is: (1, 224, 224, 3) | done 21/21')
-
-    @classmethod
-    def get_spec_class(self):
-        return GoogLeNetSpec
+        self.dropout = ivy.Dropout(0.4)
+        self.fc = ivy.Linear(1024, self.num_classes, with_bias=False)
 
     def _forward(self, x, data_format=None):
-        # this check is needed becoz we alaways assume that the input image format will
-        # be in NHWC format ie, ivy's tensor format, so if we are using NCHW then my model's build part will configure itself 
-        # for NCHW format BUT for image we have to permute it as well to NCHW by permuting becoz we assume it to be
-        # in NHWC bydefault.
-        
-        
-        # data_format = data_format if data_format else self.spec.data_format
-        # if data_format == "NCHW":
-        #     x = ivy.permute_dims(x, (0, 2, 3, 1))
-        
-        pf(f'GoogLeNet | forward | input shape is: | done -1/23')
+        data_format = data_format if data_format else self.spec.data_format
+        if data_format == "NHWC":
+            x = ivy.permute_dims(x, (0, 3, 1, 2))
+        pf(
+            f"the input IMAGE shape should be (1, 224, 224, 3) | and it is: {ivy.shape(x)}"
+        )
         out = self.conv1(x)
-        pf(f'GoogLeNet | forward | input shape is: | done 0/23')
-        out = self.pool1(out)
-        pf(f'GoogLeNet | forward | input shape is: | done 1/23')
+
+        # maxpool2d_1
+        pf(
+            f"the input shape for max_pool2d_1 should be (1, 112, 112 64) | and it is: {ivy.shape(out)}"
+        )
+        out = ivy.max_pool2d(out, [3, 3], 2, 0, ceil_mode=True, data_format="NCHW")
+
+        pf(
+            f"the input shape for conv2 should be (1, 56, 56, 64) | and it is: {ivy.shape(x)}"
+        )
         out = self.conv2(out)
-        pf(f'GoogLeNet | forward | input shape is: | done 2/23')
+
+        pf(
+            f"the input shape for conv3 shdould be (1, 56, 56, 64) | and it is: {ivy.shape(out)}"
+        )
         out = self.conv3(out)
-        pf(f'GoogLeNet | forward | input shape is: | done 3/23')
-        out = self.pool3(out)
-        pf(f'GoogLeNet | forward | input shape is: | done 4/23')
+
+        # maxpool2d_2
+        pf(
+            f"the input shape for maxpool2d_2 shdould be (1, 56, 56, 192) | and it is: {ivy.shape(out)}"
+        )
+        out = ivy.max_pool2d(out, [3, 3], 2, 0, ceil_mode=True, data_format="NCHW")
+
+        pf(f"the input shape shdould be (1, 28, 28, 192) | and it is: {ivy.shape(out)}")
         out = self.inception3A(out)
-        pf(f'GoogLeNet | forward | input shape is: | done 5/23')
+
+        pf(f"the input shape shdould be (1, 28, 28, 256) | and it is: {ivy.shape(out)}")
         out = self.inception3B(out)
-        pf(f'GoogLeNet | forward | input shape is: | done 6/23')
-        out = self.pool4(out)
-        pf(f'GoogLeNet | forward | input shape is: | done 7/23')
+
+        # maxpool2d_3
+        pf(
+            f"the input shape for maxpool2d_3 shdould be (1, 28, 28, 480) | and it is: {ivy.shape(out)}"
+        )
+        out = ivy.max_pool2d(out, [3, 3], 2, 0, ceil_mode=True, data_format="NCHW")
+
+        pf(
+            f"the input shape for inception4a shdould be (1, 14, 14, 480) | and it is: {ivy.shape(out)}"
+        )
         out = self.inception4A(out)
 
-        pf(f'GoogLeNet | forward | input shape is: | done 8/23')
+        pf(
+            f"the input shape for aux4a shdould be (1, 14, 14, 512) | and it is: {ivy.shape(out)}"
+        )
         aux1 = self.aux4A(out)
+        pf(
+            f"the output shape from aux4a shdould be (1, 1000) | and it is: {ivy.shape(out)}"
+        )
 
-        pf(f'GoogLeNet | forward | input shape is: | done 9/23')
+        pf(
+            f"the input shape for inception4b shdould be (1, 14, 14, 512)| and it is: {ivy.shape(out)}"
+        )
         out = self.inception4B(out)
-        pf(f'GoogLeNet | forward | input shape is: | done 10/23')
+
+        pf(
+            f"the input shape for inception4c shdould be (1, 14, 14, 512) | and it is: {ivy.shape(out)}"
+        )
         out = self.inception4C(out)
-        pf(f'GoogLeNet | forward | input shape is: | done 11/23')
+
+        pf(
+            f"the input shape for inception4 shdould be (1, 14, 14, 512) | and it is: {ivy.shape(out)}"
+        )
         out = self.inception4D(out)
 
-        pf(f'GoogLeNet | forward | input shape is: | done 12/23')
+        pf(
+            f"the input shape for aux4d shdould be (1, 14, 14, 528)  | and it is: {ivy.shape(out)}"
+        )
         aux2 = self.aux4D(out)
+        pf(
+            f"the output shape from aux4a shdould be (1, 1000) | and it is: {ivy.shape(out)}"
+        )
 
-        pf(f'GoogLeNet | forward | input shape is: | done 13/23')
+        pf(
+            f"the input shape for inception4e should be (1, 14, 14, 528) | and it is: {ivy.shape(out)}"
+        )
         out = self.inception4E(out)
-        pf(f'GoogLeNet | forward | input shape is: | done 14/23')
-        out = self.pool5(out)
-        pf(f'GoogLeNet | forward | input shape is: | done 15/23')
+
+        # maxpool2d_4
+        pf(
+            f"the input shape for maxpool2d_4 should be (1, 7, 7, 832) | and it is: {ivy.shape(out)}"
+        )
+        out = ivy.max_pool2d(out, [2, 2], 2, 0, ceil_mode=True, data_format="NCHW")
+
+        pf(
+            f"the input shape for inception5a is (1, 7, 7, 832) | and it is: {ivy.shape(out)}"
+        )
         out = self.inception5A(out)
-        pf(f'GoogLeNet | forward | input shape is: | done 16/23')
+
+        pf(
+            f"the input shape for inception5b shdould be (1, 7, 7, 1024) | and it is: {ivy.shape(out)}"
+        )
         out = self.inception5B(out)
 
-        pf(f'GoogLeNet | forward | input shape is: | done 17/23')
-        out = ivy.permute_dims(out, (0, 3, 1, 2))
-        pf(f'GoogLeNet | forward | input shape is: | done 18/23')
+        pf(
+            f"the input shape for AdpAvgPool should be (1, 1, 1, 1024) | and it is: {ivy.shape(out)}"
+        )
+        #       out = ivy.reshape(out, (1, 1024, 7, 7))
+        # out = ivy.permute_dims(out, (0, 3, 1, 2))
         out = self.pool6(out)
 
-        pf(f'GoogLeNet | forward | input shape is: | done 19/23')
+        pf(
+            f"the input shape for flatten layer should be (1, 1, 1, 1024) | and it is: {ivy.shape(out)}"
+        )
         out = ivy.flatten(out, start_dim=1)
-        pf(f'GoogLeNet | forward | input shape is: | done 20/23')
-        out = self.spec.dropout(out)
-        pf(f'GoogLeNet | forward | input shape is: | done 22/23')
+
+        pf(
+            f"the input shape for dropout should be (1, 1024) | and it is: {ivy.shape(out)}"
+        )
+        out = self.dropout(out)
+
+        pf(
+            f"the input shape for fc layer should be (1, 1024) | and it is: {ivy.shape(out)}"
+        )
         out = self.fc(out)
-        pf(f'GoogLeNet | forward | input shape is: | done 23/23')
+        pf(f"final fc output shape should be (1, 1000) | and it is: {ivy.shape(out)}")
 
         return out, aux1, aux2
-
-def test_GoogLeNet():
-    ivy.set_backend('torch')
-    # N x 224 x 224 x 3 
-    random_test_tensor = ivy.random_normal(shape=(1, 224, 224, 3))
-    pf(f"test_GoogLeNet | random_test_tensor shape is: {random_test_tensor.shape}")
-
-    block = GoogLeNet(data_format="NHWC")
-    block(random_test_tensor)
-    # N x 1 x 1000
-    pf("test_GoogLeNet | Test Successfull!")
-
-test_GoogLeNet()
 
 
 def _inceptionNet_torch_weights_mapping(old_key, new_key):
@@ -211,9 +211,16 @@ def _inceptionNet_torch_weights_mapping(old_key, new_key):
     return new_mapping
 
 
-def inceptionNet_v1(pretrained=True, training=False, num_classes=1000, dropout=0, data_format="NCHW"):
+def inceptionNet_v1(
+    pretrained=True, training=False, num_classes=1000, dropout=0, data_format="NCHW"
+):
     """InceptionNet-V1 model"""
-    model = GoogLeNet(num_classes=num_classes, training=training, dropout=dropout, data_format=data_format)
+    model = GoogLeNet(
+        num_classes=num_classes,
+        # training=training,
+        # dropout=dropout,
+        # data_format=data_format,
+    )
     if pretrained:
         url = "https://download.pytorch.org/models/googlenet-1378be20.pth"
         w_clean = ivy_models.helpers.load_torch_weights(

@@ -9,7 +9,7 @@ from ivy_models_tests import helpers
 
 import jax
 
-jax.config.update("jax_enable_x64", False)
+# jax.config.update("jax_enable_x64", False)
 
 load_weights = random.choice([False, True])
 model = inceptionNet_v1(pretrained=load_weights)
