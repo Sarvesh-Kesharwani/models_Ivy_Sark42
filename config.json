@@ -1,0 +1,1 @@
+{"training": false, "num_classes": 1000, "dropout": 0, "aux_dropout": 0, "data_format": "NCHW"}
