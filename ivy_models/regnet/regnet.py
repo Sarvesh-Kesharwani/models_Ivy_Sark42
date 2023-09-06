@@ -4,7 +4,17 @@ import builtins
 
 import ivy
 import ivy_models
+from ivy_models.regnet.layers import (RegNetSpec,
+RegNetEmbeddings,
+RegNetShortCut,
+RegNetSELayer,
+RegNetYLayer,
+RegNetStage,
+RegNetEncoder,
+RegNet,
+)
 from ivy_models.base import BaseSpec, BaseModel
+from dataclasses import dataclass
 
 
 class RegNetSpec(BaseSpec):
@@ -13,178 +23,190 @@ class RegNetSpec(BaseSpec):
     def __init__(
         self,
         num_channels=3,
+        num_labels=None,  #TODO
         embedding_size=32,
         hidden_sizes=[128, 192, 512, 1088],
         depths=[2, 6, 12, 2],
         groups_width=64,
         layer_type="y",
         hidden_act="relu",
+        **kwargs,
     ) -> None:
         super(RegNetSpec, self).__init__(
             num_channels=num_channels,
+            num_labels=num_labels,
             embedding_size=embedding_size,
             hidden_sizes=hidden_sizes,
             depths=depths,
             groups_width=groups_width,
             layer_type=layer_type,
             hidden_act=hidden_act,
+            **kwargs,
         )
 
 
-class ResNet(BaseModel):
+class RegNetModel(BaseModel):
     """
-    Residual Neural Network (ResNet) architecture.
+    Self-Regulated Network for Image Classification (RegNet) architecture.
 
     Args::
-        block (Type[Union[BasicBlock, Bottleneck]]):
-            The block type used in the ResNet architecture.
-        layers: List of integers specifying the number of blocks in each layer.
-        num_classes (int): Number of output classes. Defaults to 1000.
-        base_width (int): The base width of the ResNet. Defaults to 64.
-        replace_stride_with_dilation (Optional[List[bool]]):
-            List indicating whether to replace stride with dilation.
+        embedder: TODO
+        encoder: TODO
+        pooler: TODO
         v (ivy.Container): Unused parameter. Can be ignored.
 
     """
-
     def __init__(
         self,
-        block: Type[Union[BasicBlock, Bottleneck]],
-        layers: List[int],
-        num_classes: int = 1000,
-        base_width: int = 64,
-        replace_stride_with_dilation: Optional[List[bool]] = None,
+        embedder: Type[RegNetEmbeddings],
+        encoder: Type[RegNetEncoder],
+        pooler,
         spec=None,
         v: ivy.Container = None,
     ) -> None:
         self.spec = (
             spec
-            if spec and isinstance(spec, ResNetSpec)
-            else ResNetSpec(
-                block, layers, num_classes, base_width, replace_stride_with_dilation
+            if spec and isinstance(spec, RegNetSpec)
+            else RegNetSpec(
+                embedder, encoder, pooler
             )
         )
-
-        super(ResNet, self).__init__(v=v)
+        super(RegNet, self).__init__(v=v)
 
     def _build(self, *args, **kwargs):
-        self.inplanes = 64
-        self.dilation = 1
-        if self.spec.replace_stride_with_dilation is None:
-            self.spec.replace_stride_with_dilation = [False, False, False]
+        self.embedder = RegNetEmbeddings(self.spec)
+        self.encoder = RegNetEncoder(self.spec)
+        self.pooler = ivy.AdaptiveAvgPool2d((1, 1))
 
-        self.conv1 = ivy.Conv2D(3, self.inplanes, [7, 7], 2, 3, with_bias=False)
-        self.bn1 = ivy.BatchNorm2D(self.inplanes, training=False)
-        self.relu = ivy.ReLU()
-        self.maxpool = ivy.MaxPool2D(3, 2, 1)
-        self.layer1 = self._make_layer(self.spec.block, 64, self.spec.layers[0])
-        self.layer2 = self._make_layer(
-            self.spec.block,
-            128,
-            self.spec.layers[1],
-            stride=2,
-            dilate=self.spec.replace_stride_with_dilation[0],
+    def _forward(self, pixel_values, output_hidden_states = None, return_dict = None):
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.spec.output_hidden_states
         )
-        self.layer3 = self._make_layer(
-            self.spec.block,
-            256,
-            self.spec.layers[2],
-            stride=2,
-            dilate=self.spec.replace_stride_with_dilation[1],
-        )
-        self.layer4 = self._make_layer(
-            self.spec.block,
-            512,
-            self.spec.layers[3],
-            stride=2,
-            dilate=self.spec.replace_stride_with_dilation[2],
-        )
-        self.avgpool = ivy.AdaptiveAvgPool2d((1, 1))
-        self.fc = ivy.Linear(512 * self.spec.block.expansion, self.spec.num_classes)
+        return_dict = return_dict if return_dict is not None else self.spec.use_return_dict
 
-    def _make_layer(
+        embedding_output = self.embedder(pixel_values)
+
+        encoder_outputs = self.encoder(
+            embedding_output, output_hidden_states=output_hidden_states, return_dict=return_dict
+        )
+
+        last_hidden_state = encoder_outputs[0]
+
+        pooled_output = self.pooler(last_hidden_state)
+
+        if not return_dict:
+            return (last_hidden_state, pooled_output) + encoder_outputs[1:]
+
+        return [
+            last_hidden_state,
+            pooled_output,
+            encoder_outputs.hidden_states,
+        ]
+
+
+class RegNetForImageClassification():
+    def __init__(
+            self,
+            num_channels=3,
+            embedding_size=32,
+            hidden_sizes=[128, 192, 512, 1088],
+            depths=[2, 6, 12, 2],
+            groups_width=64,
+            layer_type="y",
+            hidden_act="relu",
+            num_labels=None, #TODO
+            spec=None,
+            v: ivy.Container = None,
+    ):
+        self.spec = (
+            spec
+            if spec and isinstance(spec, RegNetSpec)
+            else RegNetSpec(num_channels,
+                            num_labels,
+                            embedding_size,
+                            hidden_sizes,
+                            depths,
+                            groups_width,
+                            layer_type,
+                            hidden_act,
+                            )
+                    )
+        super(RegNet, self).__init__(v=v)
+
+    def _build(self, *args, **kwargs):
+        self.num_labels = self.spec.num_labels
+        self.regnet = RegNetModel(self.spec)
+        self.classifier = ivy.Sequential(
+            ivy.Flatten(),
+            ivy.Linear(self.spec.hidden_sizes[-1],
+                        self.spec.num_labels) if self.spec.num_labels > 0 else ivy.Identity(),
+        )
+
+    def _forward(
         self,
-        block: Type[Union[BasicBlock, Bottleneck]],
-        planes: int,
-        blocks: int,
-        stride: int = 1,
-        dilate: bool = False,
-    ) -> ivy.Sequential:
-        downsample = None
-        previous_dilation = self.dilation
-        if dilate:
-            self.dilation *= stride
-            stride = 1
-        if stride != 1 or self.inplanes != planes * block.expansion:
-            downsample = ivy.Sequential(
-                conv1x1(self.inplanes, planes * block.expansion, stride),
-                ivy.BatchNorm2D(planes * block.expansion, training=False),
-            )
+        pixel_values=None,
+        labels=None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ):
+        return_dict = return_dict if return_dict is not None else self.spec.use_return_dict
 
-        layers = []
-        layers.append(
-            block(
-                self.inplanes,
-                planes,
-                stride,
-                downsample,
-                self.spec.base_width,
-                previous_dilation,
-            )
-        )
-        self.inplanes = planes * block.expansion
-        for _ in range(1, blocks):
-            layers.append(
-                block(
-                    self.inplanes,
-                    planes,
-                    base_width=self.spec.base_width,
-                    dilation=self.dilation,
-                )
-            )
+        outputs = self.regnet(pixel_values, output_hidden_states=output_hidden_states, return_dict=return_dict)
 
-        return ivy.Sequential(*layers)
+        pooled_output = outputs.pooler_output if return_dict else outputs[1]
 
-    @classmethod
-    def get_spec_class(self):
-        return ResNetSpec
+        logits = self.classifier(pooled_output)
 
-    def _forward(self, x):
-        dtype = x.dtype
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
-        x = self.maxpool(x)
-        x = ivy.asarray(x, dtype=dtype)
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
-        x = ivy.permute_dims(x, (0, 3, 1, 2))
-        x = self.avgpool(x)
-        x = x.reshape((x.shape[0], -1))
-        x = self.fc(x)
-        return x
+        loss = None
 
+        if labels is not None:
+            if self.config.problem_type is None:
+                if self.num_labels == 1:
+                    self.config.problem_type = "regression"
+                elif self.num_labels > 1 and (labels.dtype == ivy.int64 or labels.dtype == ivy.int32):
+                    self.config.problem_type = "single_label_classification"
+                else:
+                    self.config.problem_type = "multi_label_classification"
+            if self.config.problem_type == "regression":
+                # TODO: need implementation of ivy.MSELoss()
+                loss_fct = ivy.MSELoss()
+                if self.num_labels == 1:
+                    loss = loss_fct(logits.squeeze(), labels.squeeze())
+                else:
+                    loss = loss_fct(logits, labels)
+            elif self.config.problem_type == "single_label_classification":
+                loss_fct = ivy.CrossEntropyLoss()
+                loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+            elif self.config.problem_type == "multi_label_classification":
+                # TODO: need implementation of ivy.BCEWithLogitsLoss()
+                loss_fct = ivy.BCEWithLogitsLoss()
+                loss = loss_fct(logits, labels)
 
-def _resnet_torch_weights_mapping(old_key, new_key):
-    W_KEY = ["conv1/weight", "conv2/weight", "conv3/weight", "downsample/0/weight"]
-    new_mapping = new_key
-    if builtins.any([kc in old_key for kc in W_KEY]):
-        new_mapping = {"key_chain": new_key, "pattern": "b c h w -> h w c b"}
-    return new_mapping
+        if not return_dict:
+            output = (logits,) + outputs[2:]
+            return (loss,) + output if loss is not None else output
 
+        return [loss, logits, outputs.hidden_states]
+    
 
-def resnet_152(pretrained=True):
-    """ResNet-152 model"""
-    model = ResNet(Bottleneck, [3, 8, 36, 3])
+def RegNet_for_classification(pretrained=True):
+    """RegNet for image classification"""
+    model = RegNet()
     if pretrained:
-        url = "https://download.pytorch.org/models/resnet152-f82ba261.pth"
-        w_clean = ivy_models.helpers.load_torch_weights(
-            url,
-            model,
-            raw_keys_to_prune=["num_batches_tracked"],
-            custom_mapping=_resnet_torch_weights_mapping,
-        )
-        model.v = w_clean
+        base_model_prefix = "regnet"
+        main_input_name = "pixel_values"
+        supports_gradient_checkpointing = True
+        
+        # this code basically initialized/ loads weights using some logic instead
+        # of downloading and loading theme.
+        # def _init_weights(self, module):
+        #     if isinstance(module, nn.Conv2d):
+        #         nn.init.kaiming_normal_(module.weight, mode="fan_out", nonlinearity="relu")
+        #     elif isinstance(module, (nn.BatchNorm2d, nn.GroupNorm)):
+        #         nn.init.constant_(module.weight, 1)
+        #         nn.init.constant_(module.bias, 0)
+
+        # def _set_gradient_checkpointing(self, module, value=False):
+        #     if isinstance(module, RegNetModel):
+        #         module.gradient_checkpointing = value
     return model
