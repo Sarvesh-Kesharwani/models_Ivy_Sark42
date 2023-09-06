@@ -4,27 +4,30 @@ import builtins
 
 import ivy
 import ivy_models
-from ivy_models.resnet.layers import conv1x1, BasicBlock, Bottleneck
 from ivy_models.base import BaseSpec, BaseModel
 
 
-class ResNetSpec(BaseSpec):
+class RegNetSpec(BaseSpec):
     """ResNetSpec class"""
 
     def __init__(
         self,
-        block: Type[Union[BasicBlock, Bottleneck]],
-        layers: List[int],
-        num_classes: int = 1000,
-        base_width: int = 64,
-        replace_stride_with_dilation: Optional[List[bool]] = None,
+        num_channels=3,
+        embedding_size=32,
+        hidden_sizes=[128, 192, 512, 1088],
+        depths=[2, 6, 12, 2],
+        groups_width=64,
+        layer_type="y",
+        hidden_act="relu",
     ) -> None:
-        super(ResNetSpec, self).__init__(
-            block=block,
-            layers=layers,
-            num_classes=num_classes,
-            base_width=base_width,
-            replace_stride_with_dilation=replace_stride_with_dilation,
+        super(RegNetSpec, self).__init__(
+            num_channels=num_channels,
+            embedding_size=embedding_size,
+            hidden_sizes=hidden_sizes,
+            depths=depths,
+            groups_width=groups_width,
+            layer_type=layer_type,
+            hidden_act=hidden_act,
         )
 
 
@@ -170,66 +173,6 @@ def _resnet_torch_weights_mapping(old_key, new_key):
     if builtins.any([kc in old_key for kc in W_KEY]):
         new_mapping = {"key_chain": new_key, "pattern": "b c h w -> h w c b"}
     return new_mapping
-
-
-def resnet_18(pretrained=True):
-    """ResNet-18 model"""
-    model = ResNet(BasicBlock, [2, 2, 2, 2])
-    if pretrained:
-        url = "https://download.pytorch.org/models/resnet18-f37072fd.pth"
-        w_clean = ivy_models.helpers.load_torch_weights(
-            url,
-            model,
-            raw_keys_to_prune=["num_batches_tracked"],
-            custom_mapping=_resnet_torch_weights_mapping,
-        )
-        model.v = w_clean
-    return model
-
-
-def resnet_34(pretrained=True):
-    """ResNet-34 model"""
-    model = ResNet(BasicBlock, [3, 4, 6, 3])
-    if pretrained:
-        url = "https://download.pytorch.org/models/resnet34-333f7ec4.pth"
-        w_clean = ivy_models.helpers.load_torch_weights(
-            url,
-            model,
-            raw_keys_to_prune=["num_batches_tracked"],
-            custom_mapping=_resnet_torch_weights_mapping,
-        )
-        model.v = w_clean
-    return model
-
-
-def resnet_50(pretrained=True):
-    """ResNet-50 model"""
-    model = ResNet(Bottleneck, [3, 4, 6, 3])
-    if pretrained:
-        url = "https://download.pytorch.org/models/resnet50-11ad3fa6.pth"
-        w_clean = ivy_models.helpers.load_torch_weights(
-            url,
-            model,
-            raw_keys_to_prune=["num_batches_tracked"],
-            custom_mapping=_resnet_torch_weights_mapping,
-        )
-        model.v = w_clean
-    return model
-
-
-def resnet_101(pretrained=True):
-    """ResNet-101 model"""
-    model = ResNet(Bottleneck, [3, 4, 23, 3])
-    if pretrained:
-        url = "https://download.pytorch.org/models/resnet101-cd907fc2.pth"
-        w_clean = ivy_models.helpers.load_torch_weights(
-            url,
-            model,
-            raw_keys_to_prune=["num_batches_tracked"],
-            custom_mapping=_resnet_torch_weights_mapping,
-        )
-        model.v = w_clean
-    return model
 
 
 def resnet_152(pretrained=True):
